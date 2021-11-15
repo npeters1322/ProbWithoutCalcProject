@@ -1,0 +1,198 @@
+---
+title: "PBHL-B 275 Final Project"
+author: "Nate Peters"
+date: "5/13/2021"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(TeachingDemos)
+MRegularSeasonDetailedResults <- read.csv("MRegularSeasonDetailedResults.csv")
+```
+
+## Introduction
+
+For the 2019-2020 college basketball season, the 3-point line was extended to 22 feet, 1.75 inches. Prior to the switch, the distance was 20 feet, 9 inches. I plan to assess whether there was a statistically significant decrease in 3-point shooting percentages after the extension or if percentages are not out of the ordinary. I plan to do this because it could suggest that players had a hard time adjusting to the new distance, and I am interested in knowing if the extension actually had any real, significant effects. While I am guessing that the 3-point shooting percentages were a little lower throughout college basketball, I don't necessarily know if they were significantly lower, as players often shot from well beyond the 3-point line before the extension.
+
+
+## Methods
+
+To set up the problem, I had to come up with a null hypothesis (what we assume to be true and try to provide evidence against). In this problem, $H_0$, or the null hypothesis, is: there was no difference in average 3-point shooting percentage after the extension of the 3-point line ($\delta=0=\mu_1-\mu_2$).  
+
+I also had to come up with an alternative hypothesis (the hypothesis we want to provide evidence for). $H_a$, the alternative hypothesis, is: there was a decrease in average 3-point shooting percentage after the extension of the 3-point line ($\delta<0=\mu_1<\mu_2$).  
+
+
+Then, I used my original dataset to create two separate datasets, one with stats from the 2020 season and the other with stats from the four seasons before that.
+
+```{r}
+
+#filter to 2020 stats
+Stats2020 <- MRegularSeasonDetailedResults %>%
+  filter(Season == 2020)
+
+#filter to the four seasons before 2020
+StatsPastBefore2020 <- MRegularSeasonDetailedResults %>%
+  filter(Season == 2019 | Season == 2018 | Season == 2017 | Season == 2016)
+
+```
+
+
+Next, I manipulated both datasets to get 3-point stats for each team. After manipulating, the datasets were broken down into two more datasets, one for 3-point stats in wins, and the other in losses. For example, the 2020 stats dataset was broken down into two datasets, one containing each team's 3-point stats when it won, and one containing each team's 3-point stats when it lost.
+
+```{r}
+
+#get 3-point stats in 2020, by team, only in wins
+WTeam3pStats2020 <- Stats2020 %>%
+  group_by(WTeamID) %>%
+  summarize(Tot3PAInW = sum(WFGA3),
+            Tot3PMInW = sum(WFGM3)) %>%
+  rename(TeamID = WTeamID)
+
+#get 3-point stats in 2020, by team, only in losses
+LTeam3pStats2020 <- Stats2020 %>%
+  group_by(LTeamID) %>%
+  summarize(Tot3PAInL = sum(LFGA3),
+            Tot3PMInL = sum(LFGM3)) %>%
+  rename(TeamID = LTeamID)
+
+#get 3-point stats in the four seasons before 2020, by team, only in wins
+WTeam3pStatsBefore2020 <- StatsPastBefore2020 %>%
+  group_by(WTeamID) %>%
+  summarize(Tot3PAInW = sum(WFGA3),
+            Tot3PMInW = sum(WFGM3)) %>%
+  rename(TeamID = WTeamID)
+
+#get 3-point stats in the four seasons before 2020, by team, only in losses
+LTeam3pStatsBefore2020 <- StatsPastBefore2020 %>%
+  group_by(LTeamID) %>%
+  summarize(Tot3PAInL = sum(LFGA3),
+            Tot3PMInL = sum(LFGM3)) %>%
+  rename(TeamID = LTeamID)
+
+```
+
+
+Next, I did two joins, one for the 2020 stats and one for the four seasons before. I did the joins to put 3-point stats for both wins and losses all in one dataset together. So, for the 2020 season stats, instead of having one dataset with 3-point stats in wins and one in losses, there is now just one dataset that has all of that information for each team. I did a full join because if a team either had no wins or no losses, I did not want any of the data to not make it through. In this case it wasn't a problem, but it could be if you worked with more seasons.
+
+```{r}
+
+#join wins and losses 3-point stats datasets for 2020 season
+RegSeason3PStats2020Joined <- full_join(WTeam3pStats2020, LTeam3pStats2020, by = c("TeamID"))
+
+#join wins and losses 3-point stats datasets for the four seasons before 2020
+RegSeason3PStatsBefore2020Joined <- full_join(WTeam3pStatsBefore2020, LTeam3pStatsBefore2020, by = c("TeamID"))
+
+```
+
+
+Then, I manipulated my data one last time. I only cared about the 3-point shooting percentage for each team, so I created a new variable that calculated the team's 3-point shooting percentage and only kept the team IDs and 3-point shooting percentages for each dataset (2020 season and the dataset containing the four seasons before it).
+
+```{r}
+
+#manipulate the 2020 season dataset created in the last step to make a new one containing just the team IDs and their overall 3-point shooting percentages
+RegSeason3PStats2020 <- RegSeason3PStats2020Joined %>%
+  mutate(FGM3 = Tot3PMInW + Tot3PMInL,
+         FGA3 = Tot3PAInW + Tot3PAInL,
+         Percent3PM = FGM3 / FGA3) %>%
+  select(TeamID, Percent3PM)
+
+#manipulate the dataset for the four seasons before 2020 created in the last step to make a new one containing just the team IDs and their overall 3-point shooting percentages over that span
+RegSeason3PStatsBefore2020 <- RegSeason3PStatsBefore2020Joined %>%
+  mutate(FGM3 = Tot3PMInW + Tot3PMInL,
+         FGA3 = Tot3PAInW + Tot3PAInL,
+         Percent3PM = FGM3 / FGA3) %>%
+  select(TeamID, Percent3PM)
+```
+
+
+After that, I did bootstrapping, which would help me determine whether there was a significant decrease in average 3-point shooting percentages after the 3-point line was extended.  
+
+My first step in bootstrapping was to calculate the average 3-point percentage for the 2020 season and also the four seasons before.
+
+```{r}
+m1 <- RegSeason3PStats2020 %>% summarize(mean = mean(Percent3PM))
+
+m2 <- RegSeason3PStatsBefore2020 %>% summarize(mean = mean(Percent3PM))
+```
+
+
+I then did the actual bootstrapping.
+
+```{r}
+###BOOTSTRAPPING
+set.seed(char2seed("Nate"))
+
+nBS <- 1000
+
+BSDiff <- numeric(nBS)
+
+
+for (i in 1:nBS)
+{
+  m1BS <- RegSeason3PStats2020 %>% sample_n(size = dim(RegSeason3PStats2020)[1], replace = T)
+  m2BS <- RegSeason3PStatsBefore2020 %>% sample_n(size = dim(RegSeason3PStatsBefore2020)[1], replace = T)
+  BSDiff[i] <- mean(m1BS$Percent3PM) - mean(m2BS$Percent3PM)
+}
+
+
+
+```
+
+To make sure the sample size was large enough for the Central Limit Theorem to apply, I created a histogram with a density plot included to show that the sampling distribution of the difference in average 3-point shooting percentage resembles a Normal distribution. With that knowledge, I calculated $z$, and using $z$, I calculated a p-value. 
+
+```{r}
+
+BSDiffDF <- as.data.frame(BSDiff)
+
+
+
+ggplot(data = BSDiffDF, aes(x=BSDiff))+
+  geom_histogram(aes(y= 0.00098*..density.. ), binwidth=0.00098, fill="white", colour="darkblue") +
+  geom_density(aes(y=0.00098*..density..))+
+  xlab("Difference in Average 3-Point Percentage (2020 season - the four seasons before)")+
+  ylab("Density")+
+  ggtitle("Histogram and Density Plot of Difference in Average 3-Point Percentage")
+
+
+
+z <- (m1 - m2) / sd(BSDiff)
+
+
+p <- pnorm(as.numeric(z), 0, 1)
+```
+
+In addition, I calculated a 95% confidence interval using the bootstrap principle to show a range of plausible values for the true difference in average 3-point shooting percentage after the extension.
+
+```{r}
+
+#find the 95% confidence interval for the difference in average 3-point percentages using the bootstrap principle
+
+delta <- m1$mean - m2$mean
+dstar <- BSDiff - delta
+
+BSCI <- c(delta - quantile(dstar,0.975), delta - quantile(dstar, 0.025))
+names(BSCI) <- c("2.5%", '97.5%')
+
+```
+
+
+## Results
+
+After bootstrapping, I found $z$ = `r z$mean`. We expected $z$ to have a N(0,1) distribution under $H_0$ because we assumed the difference in average 3-point shooting percentage was 0. 
+
+Using z, I found a p-value of `r p`. Using a significance level of $\alpha=0.05$, there is sufficient statistical evidence to conclude that average 3-point shooting percentage was lower after the extension of the 3-point line.
+
+Results from a 95% confidence interval using the bootstrap principle can be seen below. 
+
+```{r}
+
+BSCI
+
+```
+
+Therefore, it can be said that we are 95% confident that the true difference in average 3-point shooting percentage after the extension is between `r unname(BSCI[1])` and `r unname(BSCI[2])`. In addition to the p-value that was found, the confidence interval also shows evidence that there was a decrease in average 3-point shooting percentage after the 3-point line extension.
+
